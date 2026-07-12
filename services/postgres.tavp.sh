@@ -1,0 +1,12 @@
+TVP_NAME="postgres"
+TVP_DESC="PostgreSQL database"
+TVP_CATEGORY="database"
+TVP_PORTS=(5432)
+TVP_UI_PORT=""
+TVP_UI_SUBDOMAIN=""
+TVP_INSTALL_apt='apt-get update && apt-get install -y postgresql && service postgresql start'
+TVP_INSTALL_apk='apk add postgresql && rc-service postgresql start'
+TVP_INSTALL_dnf='dnf install -y postgresql-server && postgresql-setup --initdb && systemctl start postgresql'
+TVP_INSTALL_zypper='zypper install -y postgresql && systemctl start postgresql'
+TVP_INSTALL_pacman='pacman -S --noconfirm postgresql && systemctl start postgresql'
+TVP_INSTALL_xbps='xbps-install -y postgresql && ln -s /etc/sv/postgresql /var/service/'

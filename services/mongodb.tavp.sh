@@ -1,0 +1,12 @@
+TVP_NAME="mongodb"
+TVP_DESC="MongoDB document database"
+TVP_CATEGORY="database"
+TVP_PORTS=(27017)
+TVP_UI_PORT=""
+TVP_UI_SUBDOMAIN=""
+TVP_INSTALL_apt='apt-get update && apt-get install -y mongodb && service mongodb start'
+TVP_INSTALL_apk='apk add mongodb && rc-service mongodb start'
+TVP_INSTALL_dnf='dnf install -y mongodb && systemctl start mongod'
+TVP_INSTALL_zypper='zypper install -y mongodb && systemctl start mongod'
+TVP_INSTALL_pacman='pacman -S --noconfirm mongodb && systemctl start mongodb'
+TVP_INSTALL_xbps='xbps-install -y mongodb && ln -s /etc/sv/mongodb /var/service/'

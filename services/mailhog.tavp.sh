@@ -1,0 +1,12 @@
+TVP_NAME="mailhog"
+TVP_DESC="MailHog mail catcher (SMTP + web UI)"
+TVP_CATEGORY="mail"
+TVP_PORTS=(1025)
+TVP_UI_PORT="8025"
+TVP_UI_SUBDOMAIN="mail"
+TVP_INSTALL_apt='curl -sL https://raw.githubusercontent.com/mailhog/MailHog/master/scripts/install.sh | bash && (MailHog &)'
+TVP_INSTALL_apk='curl -sL https://raw.githubusercontent.com/mailhog/MailHog/master/scripts/install.sh | bash && (MailHog &)'
+TVP_INSTALL_dnf='curl -sL https://raw.githubusercontent.com/mailhog/MailHog/master/scripts/install.sh | bash && (MailHog &)'
+TVP_INSTALL_zypper='curl -sL https://raw.githubusercontent.com/mailhog/MailHog/master/scripts/install.sh | bash && (MailHog &)'
+TVP_INSTALL_pacman='curl -sL https://raw.githubusercontent.com/mailhog/MailHog/master/scripts/install.sh | bash && (MailHog &)'
+TVP_INSTALL_xbps='curl -sL https://raw.githubusercontent.com/mailhog/MailHog/master/scripts/install.sh | bash && (MailHog &)'

@@ -1,0 +1,20 @@
+{
+  "name": "tavp/box",
+  "description": "All-in-one dev environment ala Lando, LXC-based, irit RAM. Multi-distro, multi-stack, mail per-project.",
+  "type": "project",
+  "license": "MIT",
+  "keywords": ["tavp", "lando", "lxc", "dev-environment", "phalcon", "low-resource"],
+  "authors": [
+    { "name": "TAVP Stack", "email": "dev@tavp.web.id" }
+  ],
+  "bin": ["bin/tavpbox"],
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "files": []
+  },
+  "config": {
+    "sort-packages": true
+  }
+}

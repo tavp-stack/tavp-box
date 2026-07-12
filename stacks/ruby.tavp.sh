@@ -1,0 +1,9 @@
+TVP_NAME="ruby"
+TVP_DESC="Ruby + bundler"
+TVP_CATEGORY="stack"
+TVP_INSTALL_apt='apt-get update && apt-get install -y ruby-full git curl'
+TVP_INSTALL_apk='apk add ruby git'
+TVP_INSTALL_dnf='dnf install -y ruby git'
+TVP_INSTALL_zypper='zypper install -y ruby git'
+TVP_INSTALL_pacman='pacman -S --noconfirm ruby git'
+TVP_INSTALL_xbps='xbps-install -y ruby git'

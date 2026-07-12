@@ -1,0 +1,9 @@
+TVP_NAME="node"
+TVP_DESC="Node.js + npm"
+TVP_CATEGORY="stack"
+TVP_INSTALL_apt='apt-get update && apt-get install -y nodejs npm git curl'
+TVP_INSTALL_apk='apk add nodejs npm git'
+TVP_INSTALL_dnf='dnf install -y nodejs npm git'
+TVP_INSTALL_zypper='zypper install -y nodejs npm git'
+TVP_INSTALL_pacman='pacman -S --noconfirm nodejs npm git'
+TVP_INSTALL_xbps='xbps-install -y nodejs npm git'

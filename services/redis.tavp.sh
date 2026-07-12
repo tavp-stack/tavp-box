@@ -1,0 +1,12 @@
+TVP_NAME="redis"
+TVP_DESC="Redis key-value cache"
+TVP_CATEGORY="cache"
+TVP_PORTS=(6379)
+TVP_UI_PORT=""
+TVP_UI_SUBDOMAIN=""
+TVP_INSTALL_apt='apt-get update && apt-get install -y redis-server && service redis-server start 2>/dev/null || service redis start'
+TVP_INSTALL_apk='apk add redis && rc-service redis start'
+TVP_INSTALL_dnf='dnf install -y redis && systemctl start redis'
+TVP_INSTALL_zypper='zypper install -y redis && systemctl start redis'
+TVP_INSTALL_pacman='pacman -S --noconfirm redis && systemctl start redis'
+TVP_INSTALL_xbps='xbps-install -y redis && ln -s /etc/sv/redis /var/service/'

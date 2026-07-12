@@ -1,0 +1,12 @@
+TVP_NAME="adminer"
+TVP_DESC="Adminer database UI (ringan)"
+TVP_CATEGORY="ui"
+TVP_PORTS=()
+TVP_UI_PORT="8081"
+TVP_UI_SUBDOMAIN="adminer"
+TVP_INSTALL_apt='apt-get update && apt-get install -y php php-cli wget && mkdir -p /opt/adminer && wget -q https://www.adminer.org/latest.php -O /opt/adminer/index.php && (cd /opt/adminer && php -S 0.0.0.0:8081 &)'
+TVP_INSTALL_apk='apk add php83 php83-cli wget && mkdir -p /opt/adminer && wget -q https://www.adminer.org/latest.php -O /opt/adminer/index.php && (cd /opt/adminer && php -S 0.0.0.0:8081 &)'
+TVP_INSTALL_dnf='dnf install -y php-cli wget && mkdir -p /opt/adminer && wget -q https://www.adminer.org/latest.php -O /opt/adminer/index.php && (cd /opt/adminer && php -S 0.0.0.0:8081 &)'
+TVP_INSTALL_zypper='zypper install -y php-cli wget && mkdir -p /opt/adminer && wget -q https://www.adminer.org/latest.php -O /opt/adminer/index.php && (cd /opt/adminer && php -S 0.0.0.0:8081 &)'
+TVP_INSTALL_pacman='pacman -S --noconfirm php wget && mkdir -p /opt/adminer && wget -q https://www.adminer.org/latest.php -O /opt/adminer/index.php && (cd /opt/adminer && php -S 0.0.0.0:8081 &)'
+TVP_INSTALL_xbps='xbps-install -y php wget && mkdir -p /opt/adminer && wget -q https://www.adminer.org/latest.php -O /opt/adminer/index.php && (cd /opt/adminer && php -S 0.0.0.0:8081 &)'

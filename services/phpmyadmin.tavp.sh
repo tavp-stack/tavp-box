@@ -1,0 +1,12 @@
+TVP_NAME="phpmyadmin"
+TVP_DESC="phpMyAdmin database UI"
+TVP_CATEGORY="ui"
+TVP_PORTS=()
+TVP_UI_PORT="8080"
+TVP_UI_SUBDOMAIN="pma"
+TVP_INSTALL_apt='apt-get update && apt-get install -y php php-cli wget && wget -q https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz -O /tmp/pma.tgz && tar xzf /tmp/pma.tgz -C /opt && rm -f /opt/pma && ln -s /opt/phpMyAdmin-* /opt/pma && (cd /opt/pma && php -S 0.0.0.0:8080 &)'
+TVP_INSTALL_apk='apk add php83 php83-cli wget && wget -q https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz -O /tmp/pma.tgz && tar xzf /tmp/pma.tgz -C /opt && ln -s /opt/phpMyAdmin-* /opt/pma && (cd /opt/pma && php -S 0.0.0.0:8080 &)'
+TVP_INSTALL_dnf='dnf install -y php-cli wget && wget -q https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz -O /tmp/pma.tgz && tar xzf /tmp/pma.tgz -C /opt && ln -s /opt/phpMyAdmin-* /opt/pma && (cd /opt/pma && php -S 0.0.0.0:8080 &)'
+TVP_INSTALL_zypper='zypper install -y php-cli wget && wget -q https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz -O /tmp/pma.tgz && tar xzf /tmp/pma.tgz -C /opt && ln -s /opt/phpMyAdmin-* /opt/pma && (cd /opt/pma && php -S 0.0.0.0:8080 &)'
+TVP_INSTALL_pacman='pacman -S --noconfirm php wget && wget -q https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz -O /tmp/pma.tgz && tar xzf /tmp/pma.tgz -C /opt && ln -s /opt/phpMyAdmin-* /opt/pma && (cd /opt/pma && php -S 0.0.0.0:8080 &)'
+TVP_INSTALL_xbps='xbps-install -y php wget && wget -q https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz -O /tmp/pma.tgz && tar xzf /tmp/pma.tgz -C /opt && ln -s /opt/phpMyAdmin-* /opt/pma && (cd /opt/pma && php -S 0.0.0.0:8080 &)'

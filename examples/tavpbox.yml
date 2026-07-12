@@ -1,0 +1,13 @@
+# tavpbox.yml — contoh config (alak .lando.yml)
+# Pakai:  tavpbox create --from tavpbox.yml
+
+name: project1
+stack: tavp            # tavp | laravel | symfony | wordpress | python | node | go | ruby | blank
+phalcon: "5.16"       # kosong = tidak install Phalcon
+path: /home/user/projects/cms   # folder jadi webroot (/var/www/html di box)
+
+services:
+  - mariadb
+  - redis
+  - mailpit
+  - phpmyadmin

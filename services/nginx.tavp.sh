@@ -1,0 +1,12 @@
+TVP_NAME="nginx"
+TVP_DESC="Nginx web server"
+TVP_CATEGORY="web"
+TVP_PORTS=(80)
+TVP_UI_PORT=""
+TVP_UI_SUBDOMAIN=""
+TVP_INSTALL_apt='apt-get update && apt-get install -y nginx && service nginx start'
+TVP_INSTALL_apk='apk add nginx && rc-service nginx start'
+TVP_INSTALL_dnf='dnf install -y nginx && systemctl start nginx'
+TVP_INSTALL_zypper='zypper install -y nginx && systemctl start nginx'
+TVP_INSTALL_pacman='pacman -S --noconfirm nginx && systemctl start nginx'
+TVP_INSTALL_xbps='xbps-install -y nginx && ln -s /etc/sv/nginx /var/service/'

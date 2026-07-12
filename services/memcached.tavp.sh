@@ -1,0 +1,12 @@
+TVP_NAME="memcached"
+TVP_DESC="Memcached cache"
+TVP_CATEGORY="cache"
+TVP_PORTS=(11211)
+TVP_UI_PORT=""
+TVP_UI_SUBDOMAIN=""
+TVP_INSTALL_apt='apt-get update && apt-get install -y memcached && service memcached start'
+TVP_INSTALL_apk='apk add memcached && rc-service memcached start'
+TVP_INSTALL_dnf='dnf install -y memcached && systemctl start memcached'
+TVP_INSTALL_zypper='zypper install -y memcached && systemctl start memcached'
+TVP_INSTALL_pacman='pacman -S --noconfirm memcached && systemctl start memcached'
+TVP_INSTALL_xbps='xbps-install -y memcached && ln -s /etc/sv/memcached /var/service/'

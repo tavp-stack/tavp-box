@@ -1,0 +1,12 @@
+TVP_NAME="mailpit"
+TVP_DESC="Mailpit mail catcher (SMTP + web UI)"
+TVP_CATEGORY="mail"
+TVP_PORTS=(1025)
+TVP_UI_PORT="8025"
+TVP_UI_SUBDOMAIN="mail"
+TVP_INSTALL_apt='curl -sL https://raw.githubusercontent.com/axllent/mailpit/master/install.sh | bash && (mailpit &)'
+TVP_INSTALL_apk='apk add mailpit && rc-service mailpit start'
+TVP_INSTALL_dnf='curl -sL https://raw.githubusercontent.com/axllent/mailpit/master/install.sh | bash && (mailpit &)'
+TVP_INSTALL_zypper='curl -sL https://raw.githubusercontent.com/axllent/mailpit/master/install.sh | bash && (mailpit &)'
+TVP_INSTALL_pacman='curl -sL https://raw.githubusercontent.com/axllent/mailpit/master/install.sh | bash && (mailpit &)'
+TVP_INSTALL_xbps='curl -sL https://raw.githubusercontent.com/axllent/mailpit/master/install.sh | bash && (mailpit &)'

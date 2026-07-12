@@ -1,0 +1,12 @@
+TVP_NAME="apache"
+TVP_DESC="Apache web server"
+TVP_CATEGORY="web"
+TVP_PORTS=(80)
+TVP_UI_PORT=""
+TVP_UI_SUBDOMAIN=""
+TVP_INSTALL_apt='apt-get update && apt-get install -y apache2 && service apache2 start'
+TVP_INSTALL_apk='apk add apache2 && rc-service apache2 start'
+TVP_INSTALL_dnf='dnf install -y httpd && systemctl start httpd'
+TVP_INSTALL_zypper='zypper install -y apache2 && systemctl start apache2'
+TVP_INSTALL_pacman='pacman -S --noconfirm apache && systemctl start apache'
+TVP_INSTALL_xbps='xbps-install -y apache && ln -s /etc/sv/apache /var/service/'

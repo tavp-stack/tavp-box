@@ -1,0 +1,9 @@
+TVP_NAME="python"
+TVP_DESC="Python 3 + venv + pip"
+TVP_CATEGORY="stack"
+TVP_INSTALL_apt='apt-get update && apt-get install -y python3 python3-venv python3-pip git curl'
+TVP_INSTALL_apk='apk add python3 py3-pip git curl'
+TVP_INSTALL_dnf='dnf install -y python3 python3-pip git && python3 -m ensurepip'
+TVP_INSTALL_zypper='zypper install -y python3 python3-pip git'
+TVP_INSTALL_pacman='pacman -S --noconfirm python python-pip git'
+TVP_INSTALL_xbps='xbps-install -y python3 python3-pip git'

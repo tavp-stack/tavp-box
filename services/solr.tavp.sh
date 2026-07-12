@@ -1,0 +1,12 @@
+TVP_NAME="solr"
+TVP_DESC="Apache Solr search"
+TVP_CATEGORY="search"
+TVP_PORTS=(8983)
+TVP_UI_PORT="8983"
+TVP_UI_SUBDOMAIN="solr"
+TVP_INSTALL_apt='apt-get update && apt-get install -y solr-tomcat && service solr start'
+TVP_INSTALL_apk='apk add solr && rc-service solr start'
+TVP_INSTALL_dnf='dnf install -y solr && systemctl start solr'
+TVP_INSTALL_zypper='zypper install -y solr && systemctl start solr'
+TVP_INSTALL_pacman='pacman -S --noconfirm solr && systemctl start solr'
+TVP_INSTALL_xbps='xbps-install -y solr && ln -s /etc/sv/solr /var/service/'

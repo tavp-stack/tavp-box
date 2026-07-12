@@ -1,0 +1,9 @@
+TVP_NAME="go"
+TVP_DESC="Go (Golang) toolchain"
+TVP_CATEGORY="stack"
+TVP_INSTALL_apt='apt-get update && apt-get install -y golang-go git curl'
+TVP_INSTALL_apk='apk add go git'
+TVP_INSTALL_dnf='dnf install -y golang git'
+TVP_INSTALL_zypper='zypper install -y go git'
+TVP_INSTALL_pacman='pacman -S --noconfirm go git'
+TVP_INSTALL_xbps='xbps-install -y go git'

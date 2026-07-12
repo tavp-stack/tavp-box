@@ -1,0 +1,12 @@
+TVP_NAME="elasticsearch"
+TVP_DESC="Elasticsearch search engine"
+TVP_CATEGORY="search"
+TVP_PORTS=(9200 9300)
+TVP_UI_PORT=""
+TVP_UI_SUBDOMAIN=""
+TVP_INSTALL_apt='apt-get update && apt-get install -y elasticsearch && service elasticsearch start'
+TVP_INSTALL_apk='apk add elasticsearch && rc-service elasticsearch start'
+TVP_INSTALL_dnf='dnf install -y elasticsearch && systemctl start elasticsearch'
+TVP_INSTALL_zypper='zypper install -y elasticsearch && systemctl start elasticsearch'
+TVP_INSTALL_pacman='pacman -S --noconfirm elasticsearch && systemctl start elasticsearch'
+TVP_INSTALL_xbps='xbps-install -y elasticsearch && ln -s /etc/sv/elasticsearch /var/service/'

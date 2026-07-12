@@ -1,0 +1,9 @@
+TVP_NAME="blank"
+TVP_DESC="Kosong (Ubuntu/Alpine murni, lo install apa aja)"
+TVP_CATEGORY="stack"
+TVP_INSTALL_apt='apt-get update && apt-get install -y curl git'
+TVP_INSTALL_apk='apk add curl git'
+TVP_INSTALL_dnf='dnf install -y curl git'
+TVP_INSTALL_zypper='zypper install -y curl git'
+TVP_INSTALL_pacman='pacman -S --noconfirm curl git'
+TVP_INSTALL_xbps='xbps-install -y curl git'

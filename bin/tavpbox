@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# tavpbox — all-in-one dev environment (Lando-style, LXC-based, low RAM)
+# Works on: Linux (native), Windows (WSL2), macOS (Lima)
+#
+# Commands:
+#   tavpbox init                 Interactive first-time setup (TUI)
+#   tavpbox create [--from f]    Create a box (TUI or from tavpbox.yml)
+#   tavpbox start <name>         Start a box
+#   tavpbox stop <name>          Stop a box (RAM freed)
+#   tavpbox rebuild <name>       Recreate container, keep data
+#   tavpbox list                 List boxes
+#   tavpbox mail <name>          Open mail.<name>.tavp.local
+#   tavpbox ssh <name>           Shell into box
+#   tavpbox destroy <name>       Delete box
+#   tavpbox snapshot <name>      Snapshot box (prod/backup)
+#
+set -euo pipefail
+
+TVP_VERSION="0.1.0"
+TVP_STATE="${HOME}/.tavpbox"
+TVP_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
+TVP_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Persist BASE_DISTRO / DOMAIN / LIMITS after init
+TVP_CONFIG="${TVP_STATE}/config.sh"
+
+# ── Load libraries ───────────────────────────────────────────
+for lib in common os tui lxd caddy dns services; do
+    # shellcheck disable=SC1090
+    source "${TVP_LIB}/${lib}.sh"
+done
+
+# ── Ensure initialised ───────────────────────────────────────
+tvp_require_init() {
+    if [ ! -f "${TVP_CONFIG}" ]; then
+        tvp_error "tavpbox belum di-init. Jalankan: tavpbox init"
+        exit 1
+    fi
+    # shellcheck disable=SC1090
+    source "${TVP_CONFIG}"
+}
+
+# ── Command dispatch ─────────────────────────────────────────
+case "${1:-}" in
+    init)        tvp_cmd_init ;;
+    create)      tvp_require_init; shift; tvp_cmd_create "$@" ;;
+    start)       tvp_require_init; shift; tvp_cmd_start "$@" ;;
+    stop)        tvp_require_init; shift; tvp_cmd_stop "$@" ;;
+    rebuild)     tvp_require_init; shift; tvp_cmd_rebuild "$@" ;;
+    list)        tvp_require_init; tvp_cmd_list "$@" ;;
+    mail)        tvp_require_init; shift; tvp_cmd_mail "$@" ;;
+    ssh)         tvp_require_init; shift; tvp_cmd_ssh "$@" ;;
+    destroy)     tvp_require_init; shift; tvp_cmd_destroy "$@" ;;
+    snapshot)    tvp_require_init; shift; tvp_cmd_snapshot "$@" ;;
+    help|--help|-h) tvp_usage ;;
+    --version|-v) echo "tavpbox ${TVP_VERSION}" ;;
+    "")          tvp_usage ;;
+    *)           tvp_error "Perintah tidak dikenal: $1"; tvp_usage; exit 1 ;;
+esac

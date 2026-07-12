@@ -1,0 +1,6 @@
+# local runtime state lives in ~/.tavpbox (outside this repo) — nothing to ignore,
+# but keep editor/OS cruft out.
+*.swp
+*.swo
+.DS_Store
+/tmp/

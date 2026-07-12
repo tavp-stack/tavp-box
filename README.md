@@ -38,9 +38,12 @@ sudo bash install/install-linux.sh
 ### Windows (WSL2)
 Buka **PowerShell sebagai Administrator**:
 ```powershell
-powershell -ExecutionPolicy Bypass -File install/install-wsl.ps1
+powershell -ExecutionPolicy Bypass -File install/install-windows.ps1
 ```
 Setelah reboot (kalau WSL baru di-install), jalankan installer itu lagi.
+
+> **Tips:** Setelah terpasang, lo bisa gunakan GUI desktop **TAVP Box Desktop**  
+> (unduh di [release tavpbox-desktop](https://github.com/tavp-stack/tavpbox-desktop/releases)).
 
 ### macOS (Lima)
 ```bash

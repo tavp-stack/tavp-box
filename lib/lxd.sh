@@ -200,7 +200,11 @@ tvp_cmd_rebuild() {
 }
 
 tvp_cmd_list() {
-    lxc list
+    if [ "${1:-}" = "--json" ]; then
+        lxc list --format json
+    else
+        lxc list
+    fi
 }
 
 tvp_cmd_mail() {

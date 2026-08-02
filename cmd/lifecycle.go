@@ -89,6 +89,7 @@ func startAllContainers(client *podman.Client) error {
 	}
 
 	globalCfg, _ := config.LoadGlobal()
+	p := proxy.New(80)
 	started := 0
 
 	for _, c := range containers {
@@ -100,6 +101,17 @@ func startAllContainers(client *podman.Client) error {
 		domain := name + "." + globalCfg.DomainSuffix
 		fmt.Printf("  ✓ %s → http://%s\n", name, domain)
 		started++
+
+		// Register route for this container (same as single-project start)
+		hostPort := client.GetHostPort(c.Name, "80")
+		if hostPort > 0 {
+			p.AddRoute(domain, "127.0.0.1", hostPort)
+			// Also register mailpit route if port 8025 is mapped
+			mailpitPort := client.GetHostPort(c.Name, "8025")
+			if mailpitPort > 0 {
+				p.AddRoute(name+"-mailpit."+globalCfg.DomainSuffix, "127.0.0.1", mailpitPort)
+			}
+		}
 	}
 
 	// Restart proxy to ensure all routes are fresh

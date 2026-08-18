@@ -129,20 +129,21 @@ var infoCmd = &cobra.Command{
 					if mailpitPort > 0 {
 						fmt.Printf(" → http://localhost:%d", mailpitPort)
 					}
-					fmt.Printf(" | http://mailpit.%s", domain)
+					fmt.Printf(" | http://%s-mailpit.%s", cfg.Name, globalCfg.DomainSuffix)
 				case "mailhog":
 					mailpitPort := client.GetHostPort(cname, "8025")
 					if mailpitPort > 0 {
 						fmt.Printf(" → http://localhost:%d", mailpitPort)
 					}
+					fmt.Printf(" | http://%s-mailhog.%s", cfg.Name, globalCfg.DomainSuffix)
 				case "adminer":
 					adminerPort := client.GetHostPort(cname, "8080")
 					if adminerPort > 0 {
 						fmt.Printf(" → http://localhost:%d", adminerPort)
 					}
-					fmt.Printf(" | http://adminer.%s", domain)
+					fmt.Printf(" | http://%s-adminer.%s", cfg.Name, globalCfg.DomainSuffix)
 				case "phpmyadmin":
-					fmt.Printf(" → http://phpmyadmin.%s", domain)
+					fmt.Printf(" → http://%s-phpmyadmin.%s", cfg.Name, globalCfg.DomainSuffix)
 				case "elasticsearch":
 					fmt.Printf(" (localhost:9200)")
 				case "rabbitmq":

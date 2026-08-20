@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -53,21 +54,16 @@ var createCmd = &cobra.Command{
 			env[k] = v
 		}
 
-		webroot := cfg.Webroot
-		if webroot == "" || webroot == "." {
-			// Check .lando.yml for webroot override
-			wd, _ := os.Getwd()
-			landoPath := filepath.Join(wd, ".lando.yml")
-			if lando, err := config.ParseLando(landoPath); err == nil && lando.Config.Webroot != "" {
-				webroot = lando.Config.Webroot
-			}
-			if webroot == "" {
-				webroot = "."
-			}
-		}
-		absWebroot, _ := filepath.Abs(webroot)
+		// Always mount the FULL project directory to /var/www/html so that
+		// sibling dirs (lib/, app/, vendor/, config.ini) are visible to PHP
+		// and so container creation never fails when the webroot subdir does not
+		// exist yet. The webroot subdir is only used for the nginx `root`
+		// directive (see installPHPServer / installLaravel). Fixes #17 and the
+		// autoload class of bugs (#35).
+		projectRoot, _ := os.Getwd()
+		absRoot, _ := filepath.Abs(projectRoot)
 		volumes := []string{
-			fmt.Sprintf("%s:/var/www/html", absWebroot),
+			fmt.Sprintf("%s:/var/www/html", absRoot),
 		}
 
 		// Auto-volume for database persistence
@@ -272,14 +268,18 @@ func installRecipe(client *podman.Client, cname string, cfg *config.ProjectConfi
 }
 
 func installPHPServer(client *podman.Client, cname string, cfg *config.ProjectConfig) error {
-	// webroot config determines which subdir to mount, but nginx always serves from /var/www/html
-	// because that's where the volume is mounted.
+	// Full project is mounted at /var/www/html. Serve from the webroot subdir
+	// when set (e.g. "public"), otherwise from the project root.
+	webroot := strings.Trim(cfg.Webroot, "/")
+	nginxRoot := "/var/www/html"
+	if webroot != "" && webroot != "." {
+		nginxRoot = "/var/www/html/" + webroot
+	}
 
 	// Nginx config content (written via podman cp to avoid shell escaping issues with $)
-	// Always use /var/www/html because that's where the volume is mounted
-	nginxCfg := `server {
+	nginxCfg := fmt.Sprintf(`server {
     listen 80 default_server;
-    root /var/www/html;
+    root %s;
     index index.php index.html;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
@@ -289,13 +289,14 @@ func installPHPServer(client *podman.Client, cname string, cfg *config.ProjectCo
     }
     location ~ /\.ht { deny all; }
 }
-`
+`, nginxRoot)
 
 	// Check if packages are already installed (pre-built image)
 	_, err := client.Exec(cname, "bash", "-c", "command -v nginx && command -v php-fpm")
 	if err == nil {
 		// Already installed, just configure and start
-		client.Exec(cname, "bash", "-c", "pecl install phalcon 2>/dev/null && echo 'extension=phalcon.so' > /usr/local/etc/php/conf.d/phalcon.ini || true")
+		// Only install phalcon if missing (pre-built image already has it) — avoids 10-15min compile hang (#11)
+		client.Exec(cname, "bash", "-c", "php -m | grep -qi phalcon || (pecl install phalcon 2>/dev/null && echo 'extension=phalcon.so' > /usr/local/etc/php/conf.d/phalcon.ini) || true")
 
 		// Create storage symlinks for Laravel/TAVP
 		client.Exec(cname, "bash", "-c", "mkdir -p /run/php /tmp/storage/framework/views /tmp/storage/framework/cache /tmp/storage/framework/sessions /tmp/bootstrap-cache && rm -rf /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true && ln -sf /tmp/storage /var/www/html/storage && ln -sf /tmp/bootstrap-cache /var/www/html/bootstrap/cache")
@@ -335,9 +336,15 @@ apt-get install -y -qq --no-install-recommends nodejs`)
 }
 
 func installLaravel(client *podman.Client, cname string, cfg *config.ProjectConfig) error {
-	nginxCfg := `server {
+	// Full project mounted at /var/www/html; serve from webroot subdir (e.g. public).
+	webroot := strings.Trim(cfg.Webroot, "/")
+	nginxRoot := "/var/www/html"
+	if webroot != "" && webroot != "." {
+		nginxRoot = "/var/www/html/" + webroot
+	}
+	nginxCfg := fmt.Sprintf(`server {
     listen 80 default_server;
-    root /var/www/html;
+    root %s;
     index index.php;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
@@ -347,7 +354,7 @@ func installLaravel(client *podman.Client, cname string, cfg *config.ProjectConf
     }
     location ~ /\.ht { deny all; }
 }
-`
+`, nginxRoot)
 
 	// Check if packages are already installed (pre-built image)
 	_, err := client.Exec(cname, "bash", "-c", "command -v nginx && command -v php-fpm")
@@ -608,6 +615,8 @@ if [ -f /var/www/html/pma/config.inc.php ]; then
     rm -f /var/www/html/pma/config.inc.php
     ln -sf /etc/pma-config.inc.php /var/www/html/pma/config.inc.php 2>/dev/null || true
 fi
+# Fix world-writable config (phpMyAdmin refuses to run) — #12
+chmod 0644 /var/www/html/pma/config.inc.php 2>/dev/null || true
 chown -R www-data:www-data /var/www/html/pma 2>/dev/null || true`)
 
 		pmaNginx := `server {

@@ -118,6 +118,12 @@ var createCmd = &cobra.Command{
 			}
 		}
 
+		// Initialize database user/database from env (runs even for pre-built
+		// images, where installService short-circuits before creating the user)
+		if err := initDatabase(client, cname, cfg); err != nil {
+			fmt.Printf("  ⚠ Database init warning: %v\n", err)
+		}
+
 		// Create startup script for auto-restart
 		fmt.Printf("  Creating startup script...\n")
 		startupScript := buildStartupScript(cfg)
@@ -516,6 +522,52 @@ chmod 0644 /usr/share/phpmyadmin/config.inc.php 2>/dev/null || true`,
 		return err
 	}
 	return nil
+}
+
+// initDatabase creates the project database + user from DB_* env vars
+// (defaults app/app/app). Runs regardless of whether the DB server was
+// pre-installed in the image, so the credentials shown by `tavpbox info`
+// are always valid. Creates the user for both '%' (TCP, e.g. 127.0.0.1)
+// and 'localhost' (socket) so adminer/phpmyadmin can connect either way.
+func initDatabase(client *podman.Client, cname string, cfg *config.ProjectConfig) error {
+	if !cfg.Services["mariadb"].Enabled && !cfg.Services["mysql"].Enabled {
+		return nil
+	}
+
+	dbName := cfg.Env["DB_DATABASE"]
+	if dbName == "" {
+		dbName = "app"
+	}
+	dbUser := cfg.Env["DB_USERNAME"]
+	if dbUser == "" {
+		dbUser = "app"
+	}
+	dbPass := cfg.Env["DB_PASSWORD"]
+	if dbPass == "" {
+		dbPass = "app"
+	}
+
+	// Escape single quotes for SQL string literals
+	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
+	dbUserE := esc(dbUser)
+	dbPassE := esc(dbPass)
+	dbNameB := "`" + strings.ReplaceAll(dbName, "`", "``") + "`"
+
+	// Wait for the DB server to accept connections (started in background by
+	// the startup script). Root is accessible via socket without a password.
+	client.Exec(cname, "bash", "-c", "for i in $(seq 1 60); do mariadb -u root -e 'SELECT 1' >/dev/null 2>&1 && break; sleep 1; done")
+
+	sql := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %s;
+CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s';
+CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s';
+GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%';
+GRANT ALL PRIVILEGES ON %s.* TO '%s'@'localhost';
+FLUSH PRIVILEGES;`,
+		dbNameB, dbUserE, dbPassE, dbUserE, dbPassE, dbNameB, dbUserE, dbNameB, dbUserE)
+
+	initScript := fmt.Sprintf("mariadb -u root <<'SQL'\n%s\nSQL", sql)
+	_, err := client.Exec(cname, "bash", "-c", initScript)
+	return err
 }
 
 // writeNginxConfig writes an nginx config to a temp file and copies it into the container.

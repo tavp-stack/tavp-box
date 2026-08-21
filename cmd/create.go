@@ -273,6 +273,26 @@ func installRecipe(client *podman.Client, cname string, cfg *config.ProjectConfi
 	}
 }
 
+// configurePHPSocket points PHP's MySQL clients at the socket the database
+// server actually listens on. PHP's compiled-in default socket (often
+// /tmp/mysql.sock) does not exist in the container, so connecting with
+// DB_HOST=localhost fails with "No such file or directory" from adminer,
+// phpmyadmin and the app itself. Writing the socket explicitly (and
+// symlinking the common alternate paths) makes localhost connections work.
+// See bug #20.
+func configurePHPSocket(client *podman.Client, cname string) {
+	script := `mkdir -p /usr/local/etc/php/conf.d /run/mysqld
+cat > /usr/local/etc/php/conf.d/99-tavp-socket.ini <<'INI'
+mysqli.default_socket = /run/mysqld/mysqld.sock
+pdo_mysql.default_socket = /run/mysqld/mysqld.sock
+INI
+ln -sf /run/mysqld/mysqld.sock /tmp/mysql.sock 2>/dev/null || true
+ln -sf /run/mysqld/mysqld.sock /var/lib/mysql/mysql.sock 2>/dev/null || true
+MPID=$(pgrep -o php-fpm); if [ -n "$MPID" ]; then kill -USR2 "$MPID" 2>/dev/null || true; fi
+true`
+	client.Exec(cname, "bash", "-c", script)
+}
+
 func installPHPServer(client *podman.Client, cname string, cfg *config.ProjectConfig) error {
 	// Full project is mounted at /var/www/html. Serve from the webroot subdir
 	// when set (e.g. "public"), otherwise from the project root.
@@ -313,6 +333,7 @@ func installPHPServer(client *podman.Client, cname string, cfg *config.ProjectCo
 		}
 
 		client.Exec(cname, "bash", "-c", "php-fpm & nginx 2>/dev/null || true")
+		configurePHPSocket(client, cname)
 		return nil
 	}
 
@@ -338,6 +359,7 @@ apt-get install -y -qq --no-install-recommends nodejs`)
 	}
 
 	_, err = client.Exec(cname, "bash", "-c", "service php8.3-fpm start 2>/dev/null; service nginx start 2>/dev/null")
+	configurePHPSocket(client, cname)
 	return err
 }
 
@@ -370,6 +392,7 @@ func installLaravel(client *podman.Client, cname string, cfg *config.ProjectConf
 			return err
 		}
 		client.Exec(cname, "bash", "-c", "php-fpm & nginx 2>/dev/null || true")
+		configurePHPSocket(client, cname)
 		return nil
 	}
 
@@ -388,6 +411,7 @@ apt-get install -y -qq --no-install-recommends nodejs`)
 		return err
 	}
 	_, err = client.Exec(cname, "bash", "-c", "service php8.3-fpm start 2>/dev/null; service nginx start 2>/dev/null")
+	configurePHPSocket(client, cname)
 	return err
 }
 
@@ -491,7 +515,7 @@ mariadb -u root -e "CREATE DATABASE IF NOT EXISTS app; CREATE USER IF NOT EXISTS
 		"mysql": `export DEBIAN_FRONTEND=noninteractive
 apt-get install -y -qq mysql-server mysql-client 2>/dev/null
 mkdir -p /run/mysqld && chown mysql:mysql /run/mysqld
-mysqld --user=mysql &
+mysqld --user=mysql --socket=/run/mysqld/mysqld.sock --datadir=/var/lib/mysql &
 sleep 3`,
 		"postgres": `export DEBIAN_FRONTEND=noninteractive
 apt-get install -y -qq postgresql postgresql-client 2>/dev/null
@@ -504,9 +528,15 @@ redis-server --daemonize yes 2>/dev/null || true`,
 		"mailpit": `curl -sL https://github.com/axllent/mailpit/releases/latest/download/mailpit_linux_amd64.tar.gz | tar xz -C /usr/local/bin/
 nohup /usr/local/bin/mailpit --listen 0.0.0.0:8025 --smtp 0.0.0.0:1025 > /var/log/mailpit.log 2>&1 &`,
 		"adminer": `mkdir -p /var/www/html/adminer
-curl -sL https://www.adminer.org/latest.php -o /var/www/html/adminer/index.php
-curl -sL https://www.adminer.org/download/v5.4.4/designs/haeckel/adminer.css -o /var/www/html/adminer/adminer.css
-chmod 644 /var/www/html/adminer/index.php /var/www/html/adminer/adminer.css`,
+for i in 1 2 3 4 5; do
+  curl -fsSL --max-time 30 https://www.adminer.org/latest.php -o /var/www/html/adminer/index.php 2>/dev/null && [ -s /var/www/html/adminer/index.php ] && break
+  sleep 2
+done
+for i in 1 2 3; do
+  curl -fsSL --max-time 30 https://www.adminer.org/download/v5.4.4/designs/haeckel/adminer.css -o /var/www/html/adminer/adminer.css 2>/dev/null && [ -s /var/www/html/adminer/adminer.css ] && break
+  sleep 2
+done
+chmod 644 /var/www/html/adminer/index.php /var/www/html/adminer/adminer.css 2>/dev/null || true`,
 		"phpmyadmin": `export DEBIAN_FRONTEND=noninteractive
 apt-get install -y -qq phpmyadmin 2>/dev/null
 # Symlink ke webroot yang benar (bisa /var/www/html/public/pma untuk Laravel)
@@ -691,13 +721,16 @@ chown -R www-data:www-data /var/www/html/pma 2>/dev/null || true`)
 	if hasAdminer {
 		client.Exec(cname, "bash", "-c", `
 mkdir -p /var/www/html/adminer
-curl -sL https://www.adminer.org/latest.php -o /var/www/html/adminer/index.php 2>/dev/null
-curl -sL https://www.adminer.org/download/v5.5.0/designs/haeckel/adminer.css -o /var/www/html/adminer/adminer.css 2>/dev/null
-if [ -f /var/www/html/adminer/index.php ]; then
-    cp /var/www/html/adminer/index.php /etc/adminer-index.php 2>/dev/null || true
-    chmod 0644 /etc/adminer-index.php 2>/dev/null || true
-    rm -f /var/www/html/adminer/index.php
-    ln -sf /etc/adminer-index.php /var/www/html/adminer/index.php 2>/dev/null || true
+for i in 1 2 3 4 5; do
+  curl -fsSL --max-time 30 https://www.adminer.org/latest.php -o /var/www/html/adminer/index.php 2>/dev/null && [ -s /var/www/html/adminer/index.php ] && break
+  sleep 2
+done
+for i in 1 2 3; do
+  curl -fsSL --max-time 30 https://www.adminer.org/download/v5.5.0/designs/haeckel/adminer.css -o /var/www/html/adminer/adminer.css 2>/dev/null && [ -s /var/www/html/adminer/adminer.css ] && break
+  sleep 2
+done
+if [ -s /var/www/html/adminer/index.php ]; then
+    cp /var/www/html/adminer/index.php /etc/adminer-index.php 2>/dev/null && chmod 0644 /etc/adminer-index.php 2>/dev/null && rm -f /var/www/html/adminer/index.php && ln -sf /etc/adminer-index.php /var/www/html/adminer/index.php 2>/dev/null
 fi
 chmod 644 /var/www/html/adminer/adminer.css 2>/dev/null || true
 chown -R www-data:www-data /var/www/html/adminer 2>/dev/null || true`)

@@ -128,6 +128,10 @@ var createCmd = &cobra.Command{
 		fmt.Printf("  Creating startup script...\n")
 		startupScript := buildStartupScript(cfg)
 		client.Exec(cname, "bash", "-c", fmt.Sprintf("cat > /usr/local/bin/tavpbox-startup.sh << 'STARTEOF'\n%s\nSTARTEOF\nchmod +x /usr/local/bin/tavpbox-startup.sh", startupScript))
+		// Also replace the image's CMD script so plain container restarts
+		// bring every enabled service back up (stock image start scripts
+		// only run nginx, which killed postgres/redis/etc. on restart).
+		client.Exec(cname, "bash", "-c", fmt.Sprintf("cat > /usr/local/bin/tavpbox-start.sh << 'STARTEOF'\n%s\nSTARTEOF\nchmod +x /usr/local/bin/tavpbox-start.sh", startupScript))
 
 		// Run startup script in background (not blocking)
 		client.Exec(cname, "bash", "-c", "nohup /usr/local/bin/tavpbox-startup.sh > /var/log/tavpbox-startup.log 2>&1 &")
@@ -503,6 +507,7 @@ func installService(client *podman.Client, cname, svcName string) error {
 
 	scripts := map[string]string{
 		"mariadb": `export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
 apt-get install -y -qq mariadb-server mariadb-client 2>/dev/null
 mkdir -p /run/mysqld && chown mysql:mysql /run/mysqld
 if [ ! -f /var/lib/mysql/ibdata1 ]; then
@@ -513,19 +518,31 @@ mariadbd --user=mysql --datadir=/var/lib/mysql --socket=/run/mysqld/mysqld.sock 
 sleep 3
 mariadb -u root -e "CREATE DATABASE IF NOT EXISTS app; CREATE USER IF NOT EXISTS 'app'@'localhost' IDENTIFIED BY 'app'; GRANT ALL ON app.* TO 'app'@'localhost'; FLUSH PRIVILEGES;" 2>/dev/null || true`,
 		"mysql": `export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
 apt-get install -y -qq mysql-server mysql-client 2>/dev/null
 mkdir -p /run/mysqld && chown mysql:mysql /run/mysqld
 mysqld --user=mysql --socket=/run/mysqld/mysqld.sock --datadir=/var/lib/mysql &
 sleep 3`,
 		"postgres": `export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
 apt-get install -y -qq postgresql postgresql-client 2>/dev/null
 su - postgres -c "pg_ctlcluster $(pg_lsclusters -h | head -1 | awk '{print $1, $2}') start" 2>/dev/null || true
 su - postgres -c "psql -c \"CREATE USER app WITH PASSWORD 'app' CREATEDB;\"" 2>/dev/null || true
 su - postgres -c "psql -c \"CREATE DATABASE app OWNER app;\"" 2>/dev/null || true`,
 		"redis": `export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
 apt-get install -y -qq redis-server 2>/dev/null
 redis-server --daemonize yes 2>/dev/null || true`,
-		"mailpit": `curl -sL https://github.com/axllent/mailpit/releases/latest/download/mailpit_linux_amd64.tar.gz | tar xz -C /usr/local/bin/
+		"rabbitmq": `export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq rabbitmq-server 2>/dev/null
+su -s /bin/bash rabbitmq -c "rabbitmq-server -detached" 2>/dev/null || true`,
+		"mailpit": `for i in 1 2 3; do
+  curl -fsSL --max-time 60 https://github.com/axllent/mailpit/releases/latest/download/mailpit-linux-amd64.tar.gz -o /tmp/mailpit.tar.gz 2>/dev/null && [ -s /tmp/mailpit.tar.gz ] && break
+  sleep 2
+done
+tar xz -C /usr/local/bin/ -f /tmp/mailpit.tar.gz 2>/dev/null || true
+rm -f /tmp/mailpit.tar.gz
 nohup /usr/local/bin/mailpit --listen 0.0.0.0:8025 --smtp 0.0.0.0:1025 > /var/log/mailpit.log 2>&1 &`,
 		"adminer": `mkdir -p /var/www/html/adminer
 for i in 1 2 3 4 5; do
@@ -538,6 +555,7 @@ for i in 1 2 3; do
 done
 chmod 644 /var/www/html/adminer/index.php /var/www/html/adminer/adminer.css 2>/dev/null || true`,
 		"phpmyadmin": `export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
 apt-get install -y -qq phpmyadmin 2>/dev/null
 # Symlink ke webroot yang benar (bisa /var/www/html/public/pma untuk Laravel)
 mkdir -p /var/www/html/public
@@ -633,6 +651,17 @@ if command -v redis-server &> /dev/null; then
     redis-server --daemonize yes >/dev/null 2>&1
 fi
 
+# Start PostgreSQL if installed
+if command -v pg_ctlcluster &> /dev/null; then
+    su -s /bin/bash postgres -c "pg_ctlcluster $(pg_lsclusters -h | head -1 | awk '{print $1, $2}') start" >/dev/null 2>&1
+fi
+
+# Start RabbitMQ if installed
+if command -v rabbitmq-server &> /dev/null; then
+    su -s /bin/bash rabbitmq -c "rabbitmq-server -detached" >/dev/null 2>&1
+    sleep 3
+fi
+
 # Start PHP-FPM if installed
 if command -v php-fpm8.3 &> /dev/null; then
     php-fpm8.3 --daemonize >/dev/null 2>&1
@@ -654,10 +683,18 @@ if [ -f /usr/local/bin/mailpit ]; then
     nohup /usr/local/bin/mailpit --listen 0.0.0.0:8025 --smtp 0.0.0.0:1025 > /var/log/mailpit.log 2>&1 &
 fi
 
-# Health check - restart dead services (use exec to properly handle PID 1)
-exec sh -c '
+# Health check - restart dead services (separate script to keep quoting sane)
+cat > /usr/local/bin/tavpbox-health.sh << 'HEALTHEOF'
+#!/bin/bash
 while true; do
     sleep 10
+    if command -v pg_ctlcluster >/dev/null 2>&1 && ! pgrep -x postgres >/dev/null 2>&1; then
+        CLUSTER=$(pg_lsclusters -h | head -1 | awk '{print $1, $2}')
+        [ -n "$CLUSTER" ] && su -s /bin/bash postgres -c "pg_ctlcluster $CLUSTER start" >/dev/null 2>&1
+    fi
+    if command -v redis-server >/dev/null 2>&1 && ! pgrep -x redis-server >/dev/null 2>&1; then
+        redis-server --daemonize yes >/dev/null 2>&1
+    fi
     if [ -f /usr/local/bin/mailpit ] && ! pgrep -x mailpit >/dev/null 2>&1; then
         nohup /usr/local/bin/mailpit --listen 0.0.0.0:8025 --smtp 0.0.0.0:1025 > /var/log/mailpit.log 2>&1 &
     fi
@@ -665,7 +702,9 @@ while true; do
         nginx >/dev/null 2>&1
     fi
 done
-'
+HEALTHEOF
+chmod +x /usr/local/bin/tavpbox-health.sh
+exec /usr/local/bin/tavpbox-health.sh
 `
 	return script
 }

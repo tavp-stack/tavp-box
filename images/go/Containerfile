@@ -1,14 +1,26 @@
-FROM golang:1.22-alpine
+FROM golang:1.22-bookworm
 
 LABEL org.opencontainers.image.source="https://github.com/tavp-stack/tavpbox"
 LABEL org.opencontainers.image.description="TAVPBox Go base image with Nginx"
 
+ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Jakarta
 
-RUN apk add --no-cache nginx curl git tzdata
+# Debian-based so service install scripts in cmd/create.go work
+# (bash + apt-get). Alpine lacks both and broke all service installs (#21).
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    nginx \
+    curl \
+    ca-certificates \
+    tzdata \
+    procps \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY nginx.conf /etc/nginx/http.d/default.conf
+COPY nginx.conf /etc/nginx/sites-available/default
 COPY start.sh /usr/local/bin/tavpbox-start.sh
 RUN chmod +x /usr/local/bin/tavpbox-start.sh
+
+EXPOSE 80
 
 CMD ["/usr/local/bin/tavpbox-start.sh"]

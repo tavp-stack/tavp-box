@@ -53,12 +53,7 @@ var startCmd = &cobra.Command{
 		if hostPort > 0 {
 			p := proxy.New(80)
 			p.AddRoute(domain, "127.0.0.1", hostPort)
-			if cfg.Services["mailpit"].Enabled || cfg.Services["mailhog"].Enabled {
-				mailpitPort := client.GetHostPort(cname, "8025")
-				if mailpitPort > 0 {
-					p.AddRoute(cfg.Name+"-mailpit."+globalCfg.DomainSuffix, "127.0.0.1", mailpitPort)
-				}
-			}
+			addServiceRoutes(p, client, cname, cfg.Name, globalCfg.DomainSuffix)
 		}
 
 		// Always restart proxy to ensure routes are fresh
@@ -106,11 +101,7 @@ func startAllContainers(client *podman.Client) error {
 		hostPort := client.GetHostPort(c.Name, "80")
 		if hostPort > 0 {
 			p.AddRoute(domain, "127.0.0.1", hostPort)
-			// Also register mailpit route if port 8025 is mapped
-			mailpitPort := client.GetHostPort(c.Name, "8025")
-			if mailpitPort > 0 {
-				p.AddRoute(name+"-mailpit."+globalCfg.DomainSuffix, "127.0.0.1", mailpitPort)
-			}
+			addServiceRoutes(p, client, c.Name, name, globalCfg.DomainSuffix)
 		}
 	}
 
@@ -166,12 +157,7 @@ var restartCmd = &cobra.Command{
 		if hostPort > 0 {
 			p := proxy.New(80)
 			p.AddRoute(domain, "127.0.0.1", hostPort)
-			if cfg.Services["mailpit"].Enabled || cfg.Services["mailhog"].Enabled {
-				mailpitPort := client.GetHostPort(cname, "8025")
-				if mailpitPort > 0 {
-					p.AddRoute(cfg.Name+"-mailpit."+globalCfg.DomainSuffix, "127.0.0.1", mailpitPort)
-				}
-			}
+			addServiceRoutes(p, client, cname, cfg.Name, globalCfg.DomainSuffix)
 		}
 
 		// Restart proxy to ensure routes are fresh
@@ -181,6 +167,21 @@ var restartCmd = &cobra.Command{
 		fmt.Printf("  URL: http://%s\n", domain)
 		return nil
 	},
+}
+
+// addServiceRoutes re-registers proxy routes for optional services by
+// detecting their host port mappings, so start/restart/--all restore the
+// same routes create would have added (#25).
+func addServiceRoutes(p *proxy.Proxy, client *podman.Client, cname, name, suffix string) {
+	if port := client.GetHostPort(cname, "8025"); port > 0 {
+		p.AddRoute(name+"-mailpit."+suffix, "127.0.0.1", port)
+	}
+	if port := client.GetHostPort(cname, "8081"); port > 0 {
+		p.AddRoute(name+"-adminer."+suffix, "127.0.0.1", port)
+	}
+	if port := client.GetHostPort(cname, "8080"); port > 0 {
+		p.AddRoute(name+"-phpmyadmin."+suffix, "127.0.0.1", port)
+	}
 }
 
 func init() {

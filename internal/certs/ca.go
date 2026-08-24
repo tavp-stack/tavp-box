@@ -15,6 +15,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,57 +28,92 @@ func Dir() string {
 	return filepath.Join(home, ".tavpbox", "ca")
 }
 
+// dirOverride lets tests redirect CA storage (empty = default).
+var dirOverride string
+
+func caDir() string {
+	if dirOverride != "" {
+		return dirOverride
+	}
+	return Dir()
+}
+
 type keypair struct {
 	cert *x509.Certificate
 	tls  *tls.Certificate
 }
 
+var (
+	cacheMu   sync.Mutex
+	cache     = map[string]*keypair{} // issued certs by name ("*" or full host)
+	trustedMu sync.Mutex
+	trustedOK bool // whether CA presence in the store has been verified this run
+)
+
 // EnsureWildcard makes sure a private CA and a wildcard leaf for "*.suffix"
 // exist and are trusted by the current user, then returns the leaf ready for
 // an HTTPS server. The CA is name-constrained to the suffix so a leaked key
-// cannot be used to spoof unrelated domains. The leaf is re-issued when it
-// expires within 30 days or when the suffix changes.
+// cannot be used to spoof unrelated domains.
 func EnsureWildcard(suffix string) (tls.Certificate, error) {
-	if suffix == "" {
-		return tls.Certificate{}, errors.New("certs: empty domain suffix")
-	}
-	if err := os.MkdirAll(Dir(), 0755); err != nil {
-		return tls.Certificate{}, err
-	}
-
-	caCert, caKey, err := ensureCA(suffix)
+	kp, err := wildcardKeypair(suffix)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-
-	certPath := filepath.Join(Dir(), "wildcard-"+suffix+".crt")
-	keyPath := filepath.Join(Dir(), "wildcard-"+suffix+".key")
-
-	kp := loadKeypair(certPath, keyPath)
-	if needsIssue(kp) {
-		if err := issueLeaf(certPath, keyPath, suffix, caCert, caKey); err != nil {
-			return tls.Certificate{}, err
-		}
-		kp = loadKeypair(certPath, keyPath)
-	}
-	if kp == nil || kp.cert == nil || kp.tls == nil {
-		return tls.Certificate{}, errors.New("certs: failed to load wildcard certificate")
-	}
-
 	if !trusted(kp.cert, "check."+suffix) {
-		if err := installCA(filepath.Join(Dir(), "ca.crt")); err != nil {
+		if err := installCA(filepath.Join(caDir(), "ca.crt")); err != nil {
 			return tls.Certificate{}, fmt.Errorf("installing CA into trust store: %w", err)
 		}
 		if !trusted(kp.cert, "check."+suffix) {
 			return tls.Certificate{}, errors.New("certs: CA installed but chain is still untrusted")
 		}
+		trustedMu.Lock()
+		trustedOK = true
+		trustedMu.Unlock()
 		fmt.Printf("  TAVPBox local CA installed into your trust store (one-time)\n")
 	}
 	return *kp.tls, nil
 }
 
+// ForHost returns a trusted certificate for exactly host (any subdomain
+// depth under suffix), issuing it on demand from the local CA. Unknown or
+// out-of-suffix names fall back to the wildcard certificate. Call
+// EnsureWildcard first so the CA is present and trusted.
+func ForHost(host, suffix string) (*tls.Certificate, error) {
+	host = NormalizeHost(host)
+	suffix = strings.ToLower(strings.Trim(suffix, "."))
+
+	if !strings.HasSuffix(host, "."+suffix) || strings.Contains(host, "*") {
+		kp, err := wildcardKeypair(suffix)
+		if err != nil {
+			return nil, err
+		}
+		return kp.tls, nil
+	}
+
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if kp := cache[host]; kp != nil && time.Until(kp.cert.NotAfter) > 30*24*time.Hour {
+		return kp.tls, nil
+	}
+	kp, err := issueHost(host, suffix)
+	if err != nil {
+		return nil, err
+	}
+	cache[host] = kp
+	return kp.tls, nil
+}
+
+// NormalizeHost lowercases and strips any trailing port.
+func NormalizeHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if i := strings.LastIndex(host, ":"); i != -1 {
+		host = host[:i]
+	}
+	return strings.TrimSuffix(host, ".")
+}
+
 func caPaths() (string, string) {
-	return filepath.Join(Dir(), "ca.crt"), filepath.Join(Dir(), "ca.key")
+	return filepath.Join(caDir(), "ca.crt"), filepath.Join(caDir(), "ca.key")
 }
 
 func ensureCA(suffix string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
@@ -95,6 +132,9 @@ func ensureCA(suffix string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 		}
 	}
 
+	if err := os.MkdirAll(caDir(), 0755); err != nil {
+		return nil, nil, err
+	}
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -132,15 +172,78 @@ func ensureCA(suffix string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	return cert, priv, nil
 }
 
-func issueLeaf(certPath, keyPath, suffix string, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) error {
+// wildcardKeypair loads or issues the "*.suffix" leaf (disk-cached).
+func wildcardKeypair(suffix string) (*keypair, error) {
+	if suffix == "" {
+		return nil, errors.New("certs: empty domain suffix")
+	}
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if kp := cache["*"]; kp != nil && time.Until(kp.cert.NotAfter) > 30*24*time.Hour {
+		return kp, nil
+	}
+
+	caCert, caKey, err := ensureCA(suffix)
+	if err != nil {
+		return nil, err
+	}
+	certPath := filepath.Join(caDir(), "wildcard-"+suffix+".crt")
+	keyPath := filepath.Join(caDir(), "wildcard-"+suffix+".key")
+
+	kp := loadKeypair(certPath, keyPath)
+	if needsIssue(kp) {
+		if err := writeLeaf(certPath, keyPath, []string{"*." + suffix, suffix}, caCert, caKey); err != nil {
+			return nil, err
+		}
+		kp = loadKeypair(certPath, keyPath)
+	}
+	if kp == nil {
+		return nil, errors.New("certs: failed to load wildcard certificate")
+	}
+	cache["*"] = kp
+	return kp, nil
+}
+
+// issueHost creates an in-memory certificate for a concrete host.
+func issueHost(host, suffix string) (*keypair, error) {
+	caCert, caKey, err := ensureCA(suffix)
+	if err != nil {
+		return nil, err
+	}
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	tpl := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: host, Organization: []string{"tavp-box"}},
+		DNSNames:     []string{host},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().AddDate(0, 3, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, caCert, &priv.PublicKey, caKey)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+	tlsc := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv, Leaf: cert}
+	return &keypair{cert: cert, tls: &tlsc}, nil
+}
+
+func writeLeaf(certPath, keyPath string, dnsNames []string, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) error {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
 	}
 	tpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
-		Subject:      pkix.Name{CommonName: "*." + suffix, Organization: []string{"tavp-box"}},
-		DNSNames:     []string{"*." + suffix, suffix},
+		Subject:      pkix.Name{CommonName: dnsNames[0], Organization: []string{"tavp-box"}},
+		DNSNames:     dnsNames,
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().AddDate(0, 3, 0),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

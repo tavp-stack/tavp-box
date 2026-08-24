@@ -94,3 +94,28 @@ func TestSaveRoutesEmptyProducesValidJSON(t *testing.T) {
 		t.Fatalf("expected empty array, got %+v", routes)
 	}
 }
+
+// Multi-level subdomains must fall back to the project's base route (#26).
+func TestLookupRouteSubdomainFallback(t *testing.T) {
+	p := New(80)
+	p.routes = []Route{
+		{Domain: "penbill.tavp.my.id", IP: "127.0.0.1", Port: 8083},
+	}
+
+	cases := map[string]string{
+		"penbill.tavp.my.id":     "penbill.tavp.my.id",
+		"app.penbill.tavp.my.id": "penbill.tavp.my.id",
+		"a.b.penbill.tavp.my.id": "penbill.tavp.my.id",
+		"PENBILL.TAVP.MY.ID:443": "penbill.tavp.my.id",
+	}
+	for host, want := range cases {
+		r := p.lookupRoute(host)
+		if r == nil || r.Domain != want {
+			t.Errorf("lookupRoute(%q) = %v, want %q", host, r, want)
+		}
+	}
+
+	if r := p.lookupRoute("other.tavp.my.id"); r != nil {
+		t.Errorf("unrelated host should not match, got %v", r)
+	}
+}

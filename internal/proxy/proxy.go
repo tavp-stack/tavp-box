@@ -139,15 +139,21 @@ func (p *Proxy) Start(domainSuffix string) error {
 	// HTTPS on :443 using a self-managed local CA (auto-created and trusted)
 	if domainSuffix != "" {
 		go func() {
-			cert, err := certs.EnsureWildcard(domainSuffix)
-			if err != nil {
+			// Establishes the CA and user trust (one-time); per-host certs
+			// are then issued on demand via GetCertificate/SNI (#26).
+			if _, err := certs.EnsureWildcard(domainSuffix); err != nil {
 				fmt.Printf("TAVPBox proxy: HTTPS disabled (%v)\n", err)
 				return
 			}
 			srv := &http.Server{
-				Addr:      ":443",
-				Handler:   mux,
-				TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
+				Addr:    ":443",
+				Handler: mux,
+				TLSConfig: &tls.Config{
+					MinVersion: tls.VersionTLS12,
+					GetCertificate: func(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+						return certs.ForHost(hi.ServerName, domainSuffix)
+					},
+				},
 			}
 			fmt.Printf("TAVPBox proxy HTTPS on :443 (*.%s)\n", domainSuffix)
 			if err := srv.ListenAndServeTLS("", ""); err != nil {
@@ -177,24 +183,37 @@ func (p *Proxy) watchRoutes() {
 	}
 }
 
-func (p *Proxy) handler(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		host = host[:idx]
+// lookupRoute finds the route for a Host header. Exact match first; then
+// falls back to stripping leading labels so multi-level subdomains
+// (e.g. app.penbill.tavp.my.id) reach the project route (penbill.tavp.my.id)
+// — see #26.
+func (p *Proxy) lookupRoute(host string) *Route {
+	host = strings.ToLower(host)
+	if i := strings.LastIndex(host, ":"); i != -1 {
+		host = host[:i]
 	}
-
-	p.mu.RLock()
-	var route *Route
-	for _, rt := range p.routes {
-		if rt.Domain == host {
-			route = &rt
+	for depth := 0; depth < 5 && host != ""; depth++ {
+		for i := range p.routes {
+			if p.routes[i].Domain == host {
+				return &p.routes[i]
+			}
+		}
+		dot := strings.Index(host, ".")
+		if dot <= 0 {
 			break
 		}
+		host = host[dot+1:]
 	}
+	return nil
+}
+
+func (p *Proxy) handler(w http.ResponseWriter, r *http.Request) {
+	p.mu.RLock()
+	route := p.lookupRoute(r.Host)
 	p.mu.RUnlock()
 
 	if route == nil {
-		http.Error(w, "TAVPBox — No project configured for "+host, http.StatusNotFound)
+		http.Error(w, "TAVPBox — No project configured for "+r.Host, http.StatusNotFound)
 		return
 	}
 

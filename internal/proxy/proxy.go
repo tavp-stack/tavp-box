@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tavp-stack/tavpbox/internal/certs"
 )
 
 type Route struct {
@@ -100,7 +103,7 @@ func (p *Proxy) Routes() []Route {
 	return p.routes
 }
 
-func (p *Proxy) Start() error {
+func (p *Proxy) Start(domainSuffix string) error {
 	p.loadRoutes()
 
 	// Watch routes.json for changes
@@ -109,9 +112,29 @@ func (p *Proxy) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.handler)
 
-	// Start HTTP on port 80 (HTTP only — no HTTPS)
-	fmt.Printf("TAVPBox proxy HTTP on :80\n")
-	return http.ListenAndServe(":80", mux)
+	fmt.Printf("TAVPBox proxy HTTP on :%d\n", p.port)
+
+	// HTTPS on :443 using a self-managed local CA (auto-created and trusted)
+	if domainSuffix != "" {
+		go func() {
+			cert, err := certs.EnsureWildcard(domainSuffix)
+			if err != nil {
+				fmt.Printf("TAVPBox proxy: HTTPS disabled (%v)\n", err)
+				return
+			}
+			srv := &http.Server{
+				Addr:      ":443",
+				Handler:   mux,
+				TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
+			}
+			fmt.Printf("TAVPBox proxy HTTPS on :443 (*.%s)\n", domainSuffix)
+			if err := srv.ListenAndServeTLS("", ""); err != nil {
+				fmt.Printf("TAVPBox proxy: HTTPS listener stopped (%v)\n", err)
+			}
+		}()
+	}
+
+	return http.ListenAndServe(fmt.Sprintf(":%d", p.port), mux)
 }
 
 // watchRoutes periodically checks for changes to routes.json

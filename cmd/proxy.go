@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tavp-stack/tavpbox/internal/config"
 	"github.com/tavp-stack/tavpbox/internal/proxy"
 )
 
@@ -29,7 +30,8 @@ var proxyStartCmd = &cobra.Command{
 
 		p := proxy.New(proxyPort)
 		saveProxyPID()
-		return p.Start()
+		globalCfg, _ := config.LoadGlobal()
+		return p.Start(globalCfg.DomainSuffix)
 	},
 }
 

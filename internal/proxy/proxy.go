@@ -32,7 +32,13 @@ func New(port int) *Proxy {
 	return &Proxy{port: port}
 }
 
+// routesOverride lets tests redirect the routes file (empty = default).
+var routesOverride string
+
 func (p *Proxy) routesFile() string {
+	if routesOverride != "" {
+		return routesOverride
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".tavpbox", "proxy", "routes.json")
 }
@@ -48,8 +54,20 @@ func (p *Proxy) loadRoutes() {
 func (p *Proxy) saveRoutes() error {
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, ".tavpbox", "proxy")
+	if routesOverride != "" {
+		dir = filepath.Dir(routesOverride)
+	}
 	os.MkdirAll(dir, 0755)
-	data, _ := json.MarshalIndent(p.routes, "", "  ")
+	data := []byte("[]\n")
+	if p.routes == nil {
+		p.routes = []Route{}
+	} else {
+		var err error
+		data, err = json.MarshalIndent(p.routes, "", "  ")
+		if err != nil {
+			return err
+		}
+	}
 	return os.WriteFile(p.routesFile(), data, 0644)
 }
 
@@ -86,6 +104,10 @@ func (p *Proxy) loadRoutesFromDisk() {
 func (p *Proxy) RemoveRoute(domain string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Load from disk first: callers typically use a fresh Proxy instance,
+	// and saving an empty in-memory list would wipe ALL routes (#24).
+	p.loadRoutesFromDisk()
 
 	var newRoutes []Route
 	for _, r := range p.routes {

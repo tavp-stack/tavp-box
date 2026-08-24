@@ -41,6 +41,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 # Install Mailpit
 RUN curl -sL https://github.com/axllent/mailpit/releases/download/v1.21.1/mailpit-linux-amd64.tar.gz | tar xz -C /usr/local/bin/
 
+# Install PHP 8.4 from sury.org (multi-PHP: 8.3+Phalcon stays default, #27)
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    lsb-release ca-certificates curl gnupg \
+    && curl -fsSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/sury-php.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ trixie main" > /etc/apt/sources.list.d/sury-php.list \
+    && { printf 'Package: php8.4*\nPin: release *\nPin-Priority: 500\n\nPackage: php-common\nPin: release *\nPin-Priority: 500\n\n'; cat /etc/apt/preferences.d/no-debian-php; } > /tmp/prefs.new \
+    && mv /tmp/prefs.new /etc/apt/preferences.d/no-debian-php \
+    && apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    php8.4-fpm php8.4-cli php8.4-mysql php8.4-gd php8.4-zip php8.4-bcmath php8.4-intl php8.4-mbstring php8.4-xml php8.4-curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Configure nginx
 COPY nginx.conf /etc/nginx/sites-available/default
 

@@ -277,6 +277,36 @@ func installRecipe(client *podman.Client, cname string, cfg *config.ProjectConfi
 	}
 }
 
+// phpFastCGI returns the nginx fastcgi_pass target for the given PHP
+// major.minor version. 8.3 (official PHP in the image) listens on TCP 9000;
+// 8.4 (sury) exposes an FPM unix socket. See #27.
+func phpFastCGI(version string) string {
+	if version == "8.4" {
+		return "unix:/run/php/php8.4-fpm.sock"
+	}
+	return "127.0.0.1:9000"
+}
+
+// writePHPVersionMarker records the project's PHP version inside the
+// container so startup/health scripts (which run without config access)
+// can pick the right FPM. See #27.
+func writePHPVersionMarker(client *podman.Client, cname, version string) {
+	client.Exec(cname, "bash", "-c", fmt.Sprintf("mkdir -p /etc/tavpbox && echo '%s' > /etc/tavpbox/php-version", version))
+}
+
+// startPHPFPM starts the FPM matching the project's PHP version. For 8.4 it
+// also makes sury's CLI the default `php`. Returns true when it handled
+// startup itself; false means the caller should keep legacy 8.3 behavior.
+// See #27.
+func startPHPFPM(client *podman.Client, cname, version string) bool {
+	if version != "8.4" {
+		return false
+	}
+	client.Exec(cname, "bash", "-c", "mkdir -p /run/php && service php8.4-fpm start 2>/dev/null || php-fpm8.4 --daemonize 2>/dev/null || true")
+	client.Exec(cname, "bash", "-c", "ln -sf /usr/bin/php8.4 /usr/local/bin/php")
+	return true
+}
+
 // configurePHPSocket points PHP's MySQL clients at the socket the database
 // server actually listens on. PHP's compiled-in default socket (often
 // /tmp/mysql.sock) does not exist in the container, so connecting with
@@ -290,6 +320,10 @@ cat > /usr/local/etc/php/conf.d/99-tavp-socket.ini <<'INI'
 mysqli.default_socket = /run/mysqld/mysqld.sock
 pdo_mysql.default_socket = /run/mysqld/mysqld.sock
 INI
+# Mirror into sury PHP 8.4 CLI/FPM when present (#27)
+for d in /etc/php/8.4/cli/conf.d /etc/php/8.4/fpm/conf.d; do
+    [ -d "$d" ] && cp /usr/local/etc/php/conf.d/99-tavp-socket.ini "$d/99-tavp-socket.ini" 2>/dev/null || true
+done
 ln -sf /run/mysqld/mysqld.sock /tmp/mysql.sock 2>/dev/null || true
 ln -sf /run/mysqld/mysqld.sock /var/lib/mysql/mysql.sock 2>/dev/null || true
 MPID=$(pgrep -o php-fpm); if [ -n "$MPID" ]; then kill -USR2 "$MPID" 2>/dev/null || true; fi
@@ -298,6 +332,9 @@ true`
 }
 
 func installPHPServer(client *podman.Client, cname string, cfg *config.ProjectConfig) error {
+	phpVer := config.EffectivePHPVersion(cfg)
+	writePHPVersionMarker(client, cname, phpVer)
+
 	// Full project is mounted at /var/www/html. Serve from the webroot subdir
 	// when set (e.g. "public"), otherwise from the project root.
 	webroot := strings.Trim(cfg.Webroot, "/")
@@ -313,13 +350,13 @@ func installPHPServer(client *podman.Client, cname string, cfg *config.ProjectCo
     index index.php index.html;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_pass %s;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
     }
     location ~ /\.ht { deny all; }
 }
-`, nginxRoot)
+`, nginxRoot, phpFastCGI(phpVer))
 
 	// Check if packages are already installed (pre-built image)
 	_, err := client.Exec(cname, "bash", "-c", "command -v nginx && command -v php-fpm")
@@ -336,7 +373,11 @@ func installPHPServer(client *podman.Client, cname string, cfg *config.ProjectCo
 			return err
 		}
 
-		client.Exec(cname, "bash", "-c", "php-fpm & nginx 2>/dev/null || true")
+		if !startPHPFPM(client, cname, phpVer) {
+			client.Exec(cname, "bash", "-c", "php-fpm & nginx 2>/dev/null || true")
+		} else {
+			client.Exec(cname, "bash", "-c", "nginx 2>/dev/null || true")
+		}
 		configurePHPSocket(client, cname)
 		return nil
 	}
@@ -362,12 +403,19 @@ apt-get install -y -qq --no-install-recommends nodejs`)
 		return err
 	}
 
-	_, err = client.Exec(cname, "bash", "-c", "service php8.3-fpm start 2>/dev/null; service nginx start 2>/dev/null")
+	if !startPHPFPM(client, cname, phpVer) {
+		_, err = client.Exec(cname, "bash", "-c", "service php8.3-fpm start 2>/dev/null; service nginx start 2>/dev/null")
+	} else {
+		_, err = client.Exec(cname, "bash", "-c", "service nginx start 2>/dev/null")
+	}
 	configurePHPSocket(client, cname)
 	return err
 }
 
 func installLaravel(client *podman.Client, cname string, cfg *config.ProjectConfig) error {
+	phpVer := config.EffectivePHPVersion(cfg)
+	writePHPVersionMarker(client, cname, phpVer)
+
 	// Full project mounted at /var/www/html; serve from webroot subdir (e.g. public).
 	webroot := strings.Trim(cfg.Webroot, "/")
 	nginxRoot := "/var/www/html"
@@ -380,13 +428,13 @@ func installLaravel(client *podman.Client, cname string, cfg *config.ProjectConf
     index index.php;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_pass %s;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
     }
     location ~ /\.ht { deny all; }
 }
-`, nginxRoot)
+`, nginxRoot, phpFastCGI(phpVer))
 
 	// Check if packages are already installed (pre-built image)
 	_, err := client.Exec(cname, "bash", "-c", "command -v nginx && command -v php-fpm")
@@ -395,7 +443,11 @@ func installLaravel(client *podman.Client, cname string, cfg *config.ProjectConf
 		if err := writeNginxConfig(client, cname, nginxCfg); err != nil {
 			return err
 		}
-		client.Exec(cname, "bash", "-c", "php-fpm & nginx 2>/dev/null || true")
+		if !startPHPFPM(client, cname, phpVer) {
+			client.Exec(cname, "bash", "-c", "php-fpm & nginx 2>/dev/null || true")
+		} else {
+			client.Exec(cname, "bash", "-c", "nginx 2>/dev/null || true")
+		}
 		configurePHPSocket(client, cname)
 		return nil
 	}
@@ -414,7 +466,11 @@ apt-get install -y -qq --no-install-recommends nodejs`)
 	if err := writeNginxConfig(client, cname, nginxCfg); err != nil {
 		return err
 	}
-	_, err = client.Exec(cname, "bash", "-c", "service php8.3-fpm start 2>/dev/null; service nginx start 2>/dev/null")
+	if !startPHPFPM(client, cname, phpVer) {
+		_, err = client.Exec(cname, "bash", "-c", "service php8.3-fpm start 2>/dev/null; service nginx start 2>/dev/null")
+	} else {
+		_, err = client.Exec(cname, "bash", "-c", "service nginx start 2>/dev/null")
+	}
 	configurePHPSocket(client, cname)
 	return err
 }
@@ -662,11 +718,17 @@ if command -v rabbitmq-server &> /dev/null; then
     sleep 3
 fi
 
-# Start PHP-FPM if installed
-if command -v php-fpm8.3 &> /dev/null; then
-    php-fpm8.3 --daemonize >/dev/null 2>&1
-elif command -v php-fpm &> /dev/null; then
-    php-fpm --daemonize >/dev/null 2>&1
+# Start PHP-FPM (version-aware via /etc/tavpbox/php-version, #27)
+PHPV=$(cat /etc/tavpbox/php-version 2>/dev/null || echo "8.3")
+if [ "$PHPV" = "8.4" ]; then
+    service php8.4-fpm start >/dev/null 2>&1 || php-fpm8.4 --daemonize >/dev/null 2>&1 || true
+    ln -sf /usr/bin/php8.4 /usr/local/bin/php 2>/dev/null || true
+else
+    if command -v php-fpm8.3 &> /dev/null; then
+        php-fpm8.3 --daemonize >/dev/null 2>&1
+    elif command -v php-fpm &> /dev/null; then
+        php-fpm --daemonize >/dev/null 2>&1
+    fi
 fi
 sleep 1
 
@@ -688,6 +750,10 @@ cat > /usr/local/bin/tavpbox-health.sh << 'HEALTHEOF'
 #!/bin/bash
 while true; do
     sleep 10
+    PHPV=$(cat /etc/tavpbox/php-version 2>/dev/null || echo "8.3")
+    if [ "$PHPV" = "8.4" ] && ! pgrep -f php-fpm >/dev/null 2>&1; then
+        service php8.4-fpm start >/dev/null 2>&1 || php-fpm8.4 --daemonize >/dev/null 2>&1 || true
+    fi
     if command -v pg_ctlcluster >/dev/null 2>&1 && ! pgrep -x postgres >/dev/null 2>&1; then
         CLUSTER=$(pg_lsclusters -h | head -1 | awk '{print $1, $2}')
         [ -n "$CLUSTER" ] && su -s /bin/bash postgres -c "pg_ctlcluster $CLUSTER start" >/dev/null 2>&1

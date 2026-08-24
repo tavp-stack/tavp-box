@@ -4,9 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// DefaultPHPVersion is used when a project does not configure php_version.
+const DefaultPHPVersion = "8.3"
+
+// supportedPHPVersions are the PHP major.minor versions available in the
+// tavpbox-php image (multi-PHP image, #27). Checked newest-first so that
+// bare "8" falls through to the default below rather than matching "8.4".
+var supportedPHPVersions = []string{"8.4", "8.3"}
 
 // ServiceConfig represents a service configuration
 type ServiceConfig struct {
@@ -30,19 +39,39 @@ type EventsConfig struct {
 
 // ProjectConfig represents the project configuration (.tavpbox.yml)
 type ProjectConfig struct {
-	Name     string                   `yaml:"name"`
-	Recipe   string                   `yaml:"recipe,omitempty"`
-	Webroot  string                   `yaml:"webroot,omitempty"`
-	Image    string                   `yaml:"image,omitempty"`
-	Hostname string                   `yaml:"hostname,omitempty"`
-	TZ       string                   `yaml:"tz,omitempty"`
-	Services map[string]ServiceConfig `yaml:"services,omitempty"`
+	Name       string                   `yaml:"name"`
+	Recipe     string                   `yaml:"recipe,omitempty"`
+	Webroot    string                   `yaml:"webroot,omitempty"`
+	Image      string                   `yaml:"image,omitempty"`
+	Hostname   string                   `yaml:"hostname,omitempty"`
+	TZ         string                   `yaml:"tz,omitempty"`
+	PHPVersion string                   `yaml:"php_version,omitempty"`
+	Services   map[string]ServiceConfig `yaml:"services,omitempty"`
 	Tooling  map[string]ToolingConfig `yaml:"tooling,omitempty"`
 	Env      map[string]string        `yaml:"env,omitempty"`
 	Events   EventsConfig             `yaml:"events,omitempty"`
 	Proxy    map[string][]string      `yaml:"proxy,omitempty"`
 	RAM      string                   `yaml:"ram,omitempty"`
 	CPU      int                      `yaml:"cpu,omitempty"`
+}
+
+// EffectivePHPVersion returns the project's PHP version normalized to
+// major.minor (e.g. "8.4.x" -> "8.4"). Falls back to DefaultPHPVersion
+// when unset or unrecognized. See #27.
+func EffectivePHPVersion(cfg *ProjectConfig) string {
+	if cfg == nil {
+		return DefaultPHPVersion
+	}
+	v := strings.TrimSpace(cfg.PHPVersion)
+	if v == "" || v == "8" {
+		return DefaultPHPVersion
+	}
+	for _, s := range supportedPHPVersions {
+		if v == s || strings.HasPrefix(v, s+".") {
+			return s
+		}
+	}
+	return DefaultPHPVersion
 }
 
 // GlobalConfig represents the global configuration (~/.tavpbox/config.yml)

@@ -84,6 +84,16 @@ var infoCmd = &cobra.Command{
 		fmt.Printf(" %s\n", cfg.Name)
 		fmt.Println(strings.Repeat("=", 50))
 		fmt.Printf(" Recipe:    %s\n", cfg.Recipe)
+
+		// PHP version: prefer the running container's actual CLI, fall back
+		// to the configured version (#27)
+		phpOut, _ := client.Exec(cname, "bash", "-c", "php -v | head -1")
+		phpOut = strings.TrimSpace(phpOut)
+		if phpOut == "" {
+			phpOut = config.EffectivePHPVersion(cfg)
+		}
+		fmt.Printf(" PHP:       %s\n", phpOut)
+
 		fmt.Printf(" IP:        %s\n", ip)
 		fmt.Printf(" Webroot:   %s\n", cfg.Webroot)
 		fmt.Printf(" RAM:       %s\n", cfg.RAM)

@@ -28,6 +28,7 @@ var proxyStartCmd = &cobra.Command{
 			return nil
 		}
 
+		ensureFirewallRules(proxyPort)
 		p := proxy.New(proxyPort)
 		saveProxyPID()
 		globalCfg, _ := config.LoadGlobal()
@@ -87,6 +88,45 @@ func isProxyRunning() bool {
 	return true
 }
 
+// ensureFirewallRules adds Windows Firewall inbound rules for TAVPBox ports
+// so devices on the same LAN can access the proxy. No-op on non-Windows.
+func ensureFirewallRules(port int) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+
+	// Check if rule already exists
+	check := exec.Command("netsh", "advfirewall", "firewall", "show", "rule",
+		"name=TAVPBox-Proxy-"+fmt.Sprintf("%d", port))
+	if check.Run() == nil {
+		return // rule already exists
+	}
+
+	rules := []struct {
+		name string
+		port int
+	}{
+		{"TAVPBox-Proxy-" + fmt.Sprintf("%d", port), port},
+		{"TAVPBox-Proxy-443", 443},
+	}
+
+	for _, r := range rules {
+		args := []string{
+			"advfirewall", "firewall", "add", "rule",
+			"name=" + r.name,
+			"dir=in", "action=allow", "protocol=TCP",
+			"localport=" + fmt.Sprintf("%d", r.port),
+			"enable=yes",
+			"profile=any",
+		}
+		if out, err := exec.Command("netsh", args...).CombinedOutput(); err != nil {
+			fmt.Printf("  ⚠ Firewall rule (%d): %v — %s\n", r.port, err, strings.TrimSpace(string(out)))
+		} else {
+			fmt.Printf("  ✓ Firewall rule added: %s (port %d)\n", r.name, r.port)
+		}
+	}
+}
+
 // killProcessOnPort kills whatever process is listening on the given port
 func killProcessOnPort(port int) {
 	if runtime.GOOS == "windows" {
@@ -132,6 +172,7 @@ func ensureProxyRunning() {
 		return
 	}
 
+	ensureFirewallRules(80)
 	execPath, _ := os.Executable()
 	cmd := exec.Command(execPath, "proxy:start", "-p", "80")
 	cmd.Stdout = nil

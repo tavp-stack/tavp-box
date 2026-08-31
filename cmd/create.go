@@ -54,6 +54,14 @@ var createCmd = &cobra.Command{
 			env[k] = v
 		}
 
+		// Normalize DB_HOST: MariaDB/MySQL in containers use a Unix socket
+		// for "localhost" connections. Using 127.0.0.1 forces TCP which may
+		// fail or bypass the socket-based auth configured by initDatabase.
+		if dbHost, ok := env["DB_HOST"]; ok && dbHost == "127.0.0.1" {
+			env["DB_HOST"] = "localhost"
+			fmt.Println("  ⚠ DB_HOST normalized: 127.0.0.1 → localhost (socket)")
+		}
+
 		// Always mount the FULL project directory to /var/www/html so that
 		// sibling dirs (lib/, app/, vendor/, config.ini) are visible to PHP
 		// and so container creation never fails when the webroot subdir does not
